@@ -37,18 +37,43 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+log_warn() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
 check_dependencies() {
     log_info "Checking build dependencies..."
     
     local deps=("gcc" "make" "git" "wget" "curl" "xorriso" "mksquashfs" 
-                "cpio" "gzip" "fakeroot")
+                "cpio" "gzip" "fakeroot" "busybox" "bc" "bison" "flex" 
+                "libssl-dev" "libelf-dev" "pkg-config" "rsync")
+    
+    # Check for kernel-specific build dependencies
+    local kernel_deps=("pahole" "dwarves" "python3")
+    
+    # Essential tools for cross-compilation
+    local cross_deps=("gcc-multilib" "libc6-dev-i386")
+    
+    local missing_deps=()
     
     for dep in "${deps[@]}"; do
-        if ! command -v $dep &> /dev/null; then
-            log_error "Missing dependency: $dep"
-            exit 1
+        if ! command -v "$dep" &> /dev/null; then
+            missing_deps+=("$dep")
         fi
     done
+    
+    # Check optional but recommended dependencies
+    for dep in "${kernel_deps[@]}"; do
+        if ! command -v "$dep" &> /dev/null; then
+            log_warn "Recommended dependency missing: $dep"
+        fi
+    done
+    
+    if [ ${#missing_deps[@]} -ne 0 ]; then
+        log_error "Missing critical dependencies: ${missing_deps[*]}"
+        log_info "Install with: sudo apt-get install ${missing_deps[*]}"
+        exit 1
+    fi
     
     log_success "All dependencies satisfied"
 }
@@ -72,21 +97,26 @@ setup_build_env() {
 build_kernel() {
     log_info "Building Blue-Jay kernel..."
     
-    # Copy kernel config
+    # Use BluejayLinux optimized configuration
     if [ ! -f .config ]; then
-        log_info "Creating kernel configuration..."
-        make defconfig
-        
-        # Enable security features
-        scripts/config --enable CONFIG_SECURITY
-        scripts/config --enable CONFIG_SECURITY_SELINUX
-        scripts/config --enable CONFIG_SECURITY_APPARMOR
-        scripts/config --enable CONFIG_HARDENED_USERCOPY
-        scripts/config --enable CONFIG_FORTIFY_SOURCE
-        scripts/config --enable CONFIG_STACKPROTECTOR_STRONG
-        
-        # Enable networking features for cybersec tools
-        scripts/config --enable CONFIG_NETFILTER
+        log_info "Using BluejayLinux kernel configuration..."
+        if [ -f "arch/x86/configs/bluejay_defconfig" ]; then
+            make bluejay_defconfig ARCH=x86_64
+            log_success "BluejayLinux configuration loaded"
+        else
+            log_error "BluejayLinux config not found, falling back to defconfig"
+            make defconfig
+            
+            # Enable critical security features
+            scripts/config --enable CONFIG_SECURITY
+            scripts/config --enable CONFIG_SECURITY_SELINUX
+            scripts/config --enable CONFIG_SECURITY_APPARMOR
+            scripts/config --enable CONFIG_HARDENED_USERCOPY
+            scripts/config --enable CONFIG_FORTIFY_SOURCE
+            scripts/config --enable CONFIG_STACKPROTECTOR_STRONG
+            
+            # Enable networking features for cybersec tools
+            scripts/config --enable CONFIG_NETFILTER
         scripts/config --enable CONFIG_NETFILTER_XT_TARGET_LOG
         scripts/config --enable CONFIG_PACKET
         scripts/config --enable CONFIG_TUN

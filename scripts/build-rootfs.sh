@@ -44,28 +44,82 @@ create_base_dirs() {
 }
 
 install_system_binaries() {
-    log_info "Installing system binaries from host..."
+    log_info "Installing essential system binaries..."
     
-    # Check if binaries already copied manually
-    if [ -f "${ROOTFS}/bin/ls" ] && [ ! -L "${ROOTFS}/bin/ls" ]; then
+    # Check if already installed
+    if [ -f "${ROOTFS}/bin/busybox" ]; then
         log_info "System binaries already installed, skipping..."
         return
     fi
     
-    # Copy host system binaries
-    log_info "Copying binaries from host system..."
-    cp -r /bin/* "${ROOTFS}/bin/" 2>/dev/null || true
-    cp -r /sbin/* "${ROOTFS}/sbin/" 2>/dev/null || true
-    cp -r /usr/bin/* "${ROOTFS}/usr/bin/" 2>/dev/null || true
-    cp -r /usr/sbin/* "${ROOTFS}/usr/sbin/" 2>/dev/null || true
-    
-    # Set permissions
-    chmod +x "${ROOTFS}/bin"/* 2>/dev/null || true
-    chmod +x "${ROOTFS}/sbin"/* 2>/dev/null || true
-    chmod +x "${ROOTFS}/usr/bin"/* 2>/dev/null || true
-    chmod +x "${ROOTFS}/usr/sbin"/* 2>/dev/null || true
-    
-    log_success "System binaries installed"
+    # Install BusyBox as the primary userland
+    if command -v busybox >/dev/null 2>&1; then
+        log_info "Installing BusyBox..."
+        cp "$(which busybox)" "${ROOTFS}/bin/busybox"
+        chmod +x "${ROOTFS}/bin/busybox"
+        
+        # Create BusyBox symlinks for essential commands
+        cd "${ROOTFS}/bin"
+        ln -sf busybox sh
+        ln -sf busybox ls
+        ln -sf busybox cat
+        ln -sf busybox cp
+        ln -sf busybox mv
+        ln -sf busybox rm
+        ln -sf busybox mkdir
+        ln -sf busybox rmdir
+        ln -sf busybox chmod
+        ln -sf busybox chown
+        ln -sf busybox mount
+        ln -sf busybox umount
+        ln -sf busybox ps
+        ln -sf busybox kill
+        ln -sf busybox grep
+        ln -sf busybox sed
+        ln -sf busybox awk
+        ln -sf busybox vi
+        ln -sf busybox ash
+        ln -sf busybox bash
+        
+        cd "${ROOTFS}/sbin"
+        ln -sf ../bin/busybox init
+        ln -sf ../bin/busybox ifconfig
+        ln -sf ../bin/busybox route
+        ln -sf ../bin/busybox modprobe
+        ln -sf ../bin/busybox insmod
+        ln -sf ../bin/busybox rmmod
+        ln -sf ../bin/busybox lsmod
+        
+        log_success "BusyBox installed with symlinks"
+    else
+        log_error "BusyBox not found. Please install busybox first."
+        log_info "Creating minimal shell script fallbacks..."
+        
+        # Create minimal shell script versions of essential commands
+        cat > "${ROOTFS}/bin/sh" << 'EOF'
+#!/bin/bash
+exec /bin/bash "$@"
+EOF
+        
+        cat > "${ROOTFS}/bin/ls" << 'EOF'
+#!/bin/bash
+echo "Minimal ls implementation"
+for f in "$@"; do
+    if [ -z "$f" ]; then f='.'; fi
+    if [ -d "$f" ]; then
+        echo "Directory: $f"
+        for item in "$f"/*; do
+            [ -e "$item" ] && basename "$item"
+        done
+    elif [ -f "$f" ]; then
+        echo "File: $f"
+    fi
+done
+EOF
+        
+        chmod +x "${ROOTFS}/bin/"*
+        log_success "Minimal shell scripts created"
+    fi
 }
 
 create_device_nodes() {
@@ -162,59 +216,63 @@ EOF
 }
 
 install_init_system() {
-    log_info "Installing simple init system..."
+    log_info "Installing BluejayLinux advanced init system..."
     
-    # Create basic init script
-    cat > "${ROOTFS}/sbin/init" << 'EOF'
+    # Copy the advanced init system
+    if [ -f "$(dirname "$0")/bluejay-init.sh" ]; then
+        cp "$(dirname "$0")/bluejay-init.sh" "${ROOTFS}/sbin/init"
+        chmod +x "${ROOTFS}/sbin/init"
+        log_success "BluejayLinux advanced init system installed"
+    else
+        log_error "BluejayLinux init script not found, creating basic fallback..."
+        
+        # Create basic fallback init script
+        cat > "${ROOTFS}/sbin/init" << 'EOF'
 #!/bin/sh
-# Blue-Jay Linux init system
+# BluejayLinux Basic Init System (Fallback)
 
-export PATH="/bin:/sbin:/usr/bin:/usr/sbin"
+export PATH="/bin:/sbin:/usr/bin:/usr/sbin:/opt/bluejay/tools/bin"
 
-echo "Starting Blue-Jay Linux..."
+echo "Starting BluejayLinux (Basic Mode)..."
 
 # Mount essential filesystems
-mount -t proc proc /proc
-mount -t sysfs sysfs /sys  
-mount -t devpts devpts /dev/pts
-mount -t tmpfs tmpfs /tmp
-mount -t tmpfs tmpfs /run
+mkdir -p /proc /sys /dev/pts /tmp /run
+mount -t proc proc /proc || echo "Failed to mount /proc"
+mount -t sysfs sysfs /sys || echo "Failed to mount /sys"
+mount -t devpts devpts /dev/pts || echo "Failed to mount /dev/pts"
+mount -t tmpfs tmpfs /tmp || echo "Failed to mount /tmp"
+mount -t tmpfs tmpfs /run || echo "Failed to mount /run"
 
-# Load modules if needed
-if [ -d /lib/modules ]; then
-    modprobe -a -q $(find /lib/modules -name "*.ko" | sed 's/.*\///;s/\.ko$//' | sort -u) 2>/dev/null || true
+# Set hostname
+if [ -f /etc/hostname ]; then
+    hostname "$(cat /etc/hostname)"
 fi
 
-# Start networking
-ifconfig lo 127.0.0.1 netmask 255.0.0.0 up
+# Basic networking
+ip link set lo up 2>/dev/null || ifconfig lo up 2>/dev/null || true
+ip addr add 127.0.0.1/8 dev lo 2>/dev/null || ifconfig lo 127.0.0.1 netmask 255.0.0.0 2>/dev/null || true
 
-# Print Blue-Jay banner
-cat << 'BANNER'
- ____  _             
-| __ )| |_   _  ___  
-|  _ \| | | | |/ _ \ 
-| |_) | | |_| |  __/ 
-|____/|_|\__,_|\___| 
-      _             
-     | | __ _ _   _  
-  _  | |/ _` | | | | 
- | |_| | (_| | |_| | 
-  \___/ \__,_|\__, | 
-              |___/  
+# Load essential modules
+if [ -d /lib/modules ]; then
+    for module in ahci e1000 e1000e r8169 sd_mod ext4; do
+        modprobe "$module" 2>/dev/null || true
+    done
+fi
 
-Blue-Jay Linux - Cybersecurity Made Simple
-Version 1.0.0 "Reconnaissance"
+echo "
+BluejayLinux - Cybersecurity Made Simple
+Version 1.0.0 'Reconnaissance'
 
-BANNER
-
-echo "System ready. Starting shell..."
+System ready. Type 'bluejay-tools' to see available security tools.
+"
 
 # Start shell
-exec /bin/sh
+exec /bin/sh -l
 EOF
-    
-    chmod +x "${ROOTFS}/sbin/init"
-    log_success "Init system installed"
+        
+        chmod +x "${ROOTFS}/sbin/init"
+        log_success "Basic init system installed"
+    fi
 }
 
 create_bluejay_user() {
@@ -271,6 +329,78 @@ EOF
     log_success "Blue-Jay user environment created"
 }
 
+install_medium_level_managers() {
+    log_info "Installing medium-level system managers..."
+    
+    # Create BluejayLinux bin directory
+    mkdir -p "${ROOTFS}/opt/bluejay/bin"
+    
+    # Copy all medium-level managers
+    local managers=(
+        "bluejay-service-manager.sh"
+        "bluejay-resource-manager.sh"
+        "bluejay-input-manager.sh"
+        "bluejay-display-server.sh"
+        "bluejay-window-manager.sh"
+        "bluejay-ipc-manager.sh"
+        "bluejay-session-manager.sh"
+        "bluejay-audio-manager.sh"
+        "bluejay-hotplug-manager.sh"
+        "bluejay-power-manager.sh"
+    )
+    
+    for manager in "${managers[@]}"; do
+        if [ -f "scripts/$manager" ]; then
+            cp "scripts/$manager" "${ROOTFS}/opt/bluejay/bin/${manager%.sh}"
+            chmod +x "${ROOTFS}/opt/bluejay/bin/${manager%.sh}"
+            log_info "Installed: ${manager%.sh}"
+        fi
+    done
+    
+    # Install medium-level testing framework
+    if [ -f "scripts/bluejay-medium-test.sh" ]; then
+        cp "scripts/bluejay-medium-test.sh" "${ROOTFS}/opt/bluejay/bin/bluejay-medium-test"
+        chmod +x "${ROOTFS}/opt/bluejay/bin/bluejay-medium-test"
+        log_info "Installed medium-level testing framework"
+    fi
+    
+    # Create systemd-style service files for medium-level components
+    mkdir -p "${ROOTFS}/etc/bluejay/services"
+    
+    # Service definitions with proper dependencies
+    local services=(
+        "bluejay-service-manager:/opt/bluejay/bin/bluejay-service-manager init"
+        "bluejay-resource-manager:/opt/bluejay/bin/bluejay-resource-manager start-monitor"
+        "bluejay-input-manager:/opt/bluejay/bin/bluejay-input-manager start"
+        "bluejay-display-server:/opt/bluejay/bin/bluejay-display-server start"
+        "bluejay-window-manager:/opt/bluejay/bin/bluejay-window-manager start"
+        "bluejay-ipc-manager:/opt/bluejay/bin/bluejay-ipc-manager start"
+        "bluejay-session-manager:/opt/bluejay/bin/bluejay-session-manager start"
+        "bluejay-audio-manager:/opt/bluejay/bin/bluejay-audio-manager start"
+        "bluejay-hotplug-manager:/opt/bluejay/bin/bluejay-hotplug-manager start"
+        "bluejay-power-manager:/opt/bluejay/bin/bluejay-power-manager start"
+    )
+    
+    for service_def in "${services[@]}"; do
+        local service_name="${service_def%%:*}"
+        local service_cmd="${service_def#*:}"
+        
+        cat > "${ROOTFS}/etc/bluejay/services/${service_name}.service" << EOF
+ExecStart=$service_cmd
+PIDFile=/run/${service_name}.pid
+Restart=yes
+RestartDelay=5
+EOF
+    done
+    
+    # Set up service dependencies
+    echo "bluejay-input-manager" > "${ROOTFS}/etc/bluejay/services/bluejay-display-server.deps"
+    echo "bluejay-display-server" > "${ROOTFS}/etc/bluejay/services/bluejay-window-manager.deps"
+    echo "bluejay-ipc-manager" > "${ROOTFS}/etc/bluejay/services/bluejay-session-manager.deps"
+    
+    log_success "Medium-level managers installed and configured"
+}
+
 main() {
     log_info "Building Blue-Jay Linux root filesystem..."
     
@@ -280,8 +410,9 @@ main() {
     configure_base_system
     install_init_system
     create_bluejay_user
+    install_medium_level_managers
     
-    log_success "Root filesystem build complete"
+    log_success "Root filesystem build complete with medium-level functionality"
 }
 
 main "$@"
