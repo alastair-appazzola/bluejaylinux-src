@@ -5,7 +5,7 @@
 set -e
 
 BLUEJAY_VERSION="1.0.0"
-BLUEJAY_CODENAME="Reconnaissance"
+BLUEJAY_CODENAME="Renaissance"
 KERNEL_VERSION="6.16.0"
 
 # Build directories
@@ -117,15 +117,16 @@ build_kernel() {
             
             # Enable networking features for cybersec tools
             scripts/config --enable CONFIG_NETFILTER
-        scripts/config --enable CONFIG_NETFILTER_XT_TARGET_LOG
-        scripts/config --enable CONFIG_PACKET
-        scripts/config --enable CONFIG_TUN
+            scripts/config --enable CONFIG_NETFILTER_XT_TARGET_LOG
+            scripts/config --enable CONFIG_PACKET
+            scripts/config --enable CONFIG_TUN
         
-        # Enable container support
-        scripts/config --enable CONFIG_NAMESPACES
-        scripts/config --enable CONFIG_CGROUPS
+            # Enable container support
+            scripts/config --enable CONFIG_NAMESPACES
+            scripts/config --enable CONFIG_CGROUPS
         
-        log_success "Kernel configured for Blue-Jay Linux"
+            log_success "Kernel configured for Blue-Jay Linux"
+        fi
     fi
     
     # Build kernel
