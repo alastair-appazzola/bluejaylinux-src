@@ -55,6 +55,21 @@ create_simple_placeholder() {
     fi
 }
 
+# Enhanced icon creation function for appearance settings
+create_appearance_icon() {
+    local name="$1"
+    local icon_dir="$2"
+    local content="$3"
+    
+    mkdir -p "$icon_dir"
+    
+    cat > "$icon_dir/${name}.txt" << EOF
+# ASCII Icon: $name
+# BluejayLinux Icon Theme
+$content
+EOF
+}
+
 create_ascii_art() {
     log_info "Creating ASCII art placeholders..."
     

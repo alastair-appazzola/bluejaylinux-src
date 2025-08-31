@@ -401,6 +401,47 @@ EOF
     log_success "Medium-level managers installed and configured"
 }
 
+install_chrome_browser() {
+    log_info "Installing Google Chrome browser automatically..."
+    
+    # Check if Chrome installer script exists
+    if [ -x scripts/install-chrome.sh ]; then
+        log_info "Running Chrome installation..."
+        scripts/install-chrome.sh
+    else
+        log_warn "Chrome installer script not found, skipping Chrome installation"
+        return 0
+    fi
+    
+    log_success "Chrome browser installation completed"
+}
+
+install_comprehensive_settings() {
+    log_info "Installing comprehensive settings system with 25+ categories..."
+    
+    # Run comprehensive settings installer
+    if [ -x scripts/bluejay-comprehensive-settings.sh ]; then
+        scripts/bluejay-comprehensive-settings.sh
+    else
+        log_warn "Comprehensive settings installer not found"
+        return 0
+    fi
+    
+    # Replace the old basic settings with comprehensive settings
+    if [ -f "${ROOTFS}/usr/bin/bluejay-settings" ]; then
+        rm -f "${ROOTFS}/usr/bin/bluejay-settings"
+        ln -sf "/opt/bluejay/bin/bluejay-comprehensive-settings" "${ROOTFS}/usr/bin/bluejay-settings"
+    fi
+    
+    # Update desktop shortcut
+    if [ -f "${ROOTFS}/home/bluejay/Desktop/Settings.desktop" ]; then
+        sed -i 's|Exec=bluejay-settings|Exec=bluejay-comprehensive-settings|' "${ROOTFS}/home/bluejay/Desktop/Settings.desktop"
+        sed -i 's|Name=Settings|Name=BluejayLinux Settings (25+ Categories)|' "${ROOTFS}/home/bluejay/Desktop/Settings.desktop"
+    fi
+    
+    log_success "Comprehensive settings system installed with real functionality"
+}
+
 main() {
     log_info "Building Blue-Jay Linux root filesystem..."
     
@@ -411,8 +452,10 @@ main() {
     install_init_system
     create_bluejay_user
     install_medium_level_managers
+    install_chrome_browser
+    install_comprehensive_settings
     
-    log_success "Root filesystem build complete with medium-level functionality"
+    log_success "Root filesystem build complete with comprehensive settings system"
 }
 
 main "$@"

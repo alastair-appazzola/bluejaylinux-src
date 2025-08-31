@@ -79,13 +79,23 @@ SNAP_DISTANCE=10
 
 # Desktop effects
 ENABLE_SHADOWS=true
-ENABLE_ANIMATIONS=false
+ENABLE_ANIMATIONS=true
+ENABLE_TRANSPARENCY=true
+ENABLE_BLUR=false
 ANIMATION_DURATION=200
+FADE_DURATION=150
+SHADOW_OPACITY=0.5
 
 # Workspace settings
 WORKSPACE_COUNT=4
 DEFAULT_WORKSPACE=1
 SHOW_WORKSPACE_SWITCHER=true
+WORKSPACE_SWITCH_ANIMATION=slide
+
+# Compositing settings
+ENABLE_COMPOSITING=true
+VSYNC_ENABLED=true
+HARDWARE_ACCELERATION=auto
 
 # Application menu
 SHOW_APPLICATION_MENU=true
@@ -466,12 +476,80 @@ update_taskbar() {
     done
     
     # Draw system tray area
-    local tray_x=$((display_width - 100))
-    /opt/bluejay/bin/bluejay-graphics rect "$tray_x" "$((display_height - taskbar_height + 5))" 90 22 "606060"
+    local tray_x=$((display_width - 200))
+    /opt/bluejay/bin/bluejay-graphics rect "$tray_x" "$((display_height - taskbar_height + 5))" 190 22 "606060"
+    
+    # Draw system indicators
+    draw_system_indicators "$tray_x" "$((display_height - taskbar_height + 5))"
     
     # Draw clock
     local current_time=$(date '+%H:%M')
-    /opt/bluejay/bin/bluejay-graphics text "$((tray_x + 25))" "$((display_height - 10))" "$current_time" "ffffff"
+    /opt/bluejay/bin/bluejay-graphics text "$((tray_x + 145))" "$((display_height - 10))" "$current_time" "ffffff"
+}
+
+# Draw system indicators in tray
+draw_system_indicators() {
+    local tray_x="$1"
+    local tray_y="$2"
+    local x_pos=$((tray_x + 5))
+    
+    # Network status indicator
+    if ip route | grep -q default; then
+        # Network connected
+        /opt/bluejay/bin/bluejay-graphics rect "$x_pos" "$((tray_y + 3))" 16 16 "00aa00"
+        /opt/bluejay/bin/bluejay-graphics text "$((x_pos + 2))" "$((tray_y + 15))" "NET" "ffffff"
+    else
+        # Network disconnected
+        /opt/bluejay/bin/bluejay-graphics rect "$x_pos" "$((tray_y + 3))" 16 16 "aa0000"
+        /opt/bluejay/bin/bluejay-graphics text "$((x_pos + 2))" "$((tray_y + 15))" "NET" "ffffff"
+    fi
+    x_pos=$((x_pos + 20))
+    
+    # Audio status indicator
+    local volume_level=$(amixer get Master 2>/dev/null | grep -oP '\[\K[0-9]+(?=%\])' | head -1 || echo "0")
+    if [ "$volume_level" -gt 0 ]; then
+        /opt/bluejay/bin/bluejay-graphics rect "$x_pos" "$((tray_y + 3))" 16 16 "0078d4"
+        /opt/bluejay/bin/bluejay-graphics text "$((x_pos + 2))" "$((tray_y + 15))" "AUD" "ffffff"
+    else
+        /opt/bluejay/bin/bluejay-graphics rect "$x_pos" "$((tray_y + 3))" 16 16 "808080"
+        /opt/bluejay/bin/bluejay-graphics text "$((x_pos + 2))" "$((tray_y + 15))" "MUT" "ffffff"
+    fi
+    x_pos=$((x_pos + 20))
+    
+    # Battery status indicator (if present)
+    if [ -d "/sys/class/power_supply/BAT0" ]; then
+        local battery_level=$(cat /sys/class/power_supply/BAT0/capacity 2>/dev/null || echo "0")
+        local battery_status=$(cat /sys/class/power_supply/BAT0/status 2>/dev/null || echo "Unknown")
+        
+        local battery_color="00aa00"
+        if [ "$battery_level" -lt 20 ]; then
+            battery_color="aa0000"
+        elif [ "$battery_level" -lt 50 ]; then
+            battery_color="aaaa00"
+        fi
+        
+        if [ "$battery_status" = "Charging" ]; then
+            battery_color="00aaaa"
+        fi
+        
+        /opt/bluejay/bin/bluejay-graphics rect "$x_pos" "$((tray_y + 3))" 16 16 "$battery_color"
+        /opt/bluejay/bin/bluejay-graphics text "$((x_pos + 2))" "$((tray_y + 15))" "BAT" "ffffff"
+        x_pos=$((x_pos + 20))
+    fi
+    
+    # WiFi status indicator
+    if iwconfig 2>/dev/null | grep -q "ESSID:"; then
+        /opt/bluejay/bin/bluejay-graphics rect "$x_pos" "$((tray_y + 3))" 16 16 "aa00aa"
+        /opt/bluejay/bin/bluejay-graphics text "$((x_pos + 2))" "$((tray_y + 15))" "WiFi" "ffffff"
+    else
+        /opt/bluejay/bin/bluejay-graphics rect "$x_pos" "$((tray_y + 3))" 16 16 "606060"
+        /opt/bluejay/bin/bluejay-graphics text "$((x_pos + 2))" "$((tray_y + 15))" "WiFi" "ffffff"
+    fi
+    x_pos=$((x_pos + 25))
+    
+    # Workspace indicator
+    local current_ws=$(get_current_workspace)
+    /opt/bluejay/bin/bluejay-graphics text "$x_pos" "$((tray_y + 15))" "WS$current_ws" "ffffff"
 }
 
 # Process input events
@@ -873,6 +951,72 @@ close_window_by_id() {
     log_wm "Requested close window: $window_id"
 }
 
+# Get current workspace
+get_current_workspace() {
+    if [ -f "$WM_STATE" ]; then
+        . "$WM_STATE"
+        echo "$current_workspace"
+    else
+        echo "1"
+    fi
+}
+
+# Switch to workspace
+switch_workspace() {
+    local workspace_num="$1"
+    
+    if [ -z "$workspace_num" ] || [ "$workspace_num" -lt 1 ] || [ "$workspace_num" -gt 4 ]; then
+        log_error "Invalid workspace number (1-4)"
+        return 1
+    fi
+    
+    if [ ! -p "$WM_FIFO" ]; then
+        log_error "Window manager not running"
+        return 1
+    fi
+    
+    echo "SWITCH_WORKSPACE:$workspace_num" > "$WM_FIFO"
+    log_wm "Switched to workspace $workspace_num"
+}
+
+# Toggle desktop visibility
+toggle_desktop() {
+    if [ ! -p "$WM_FIFO" ]; then
+        log_error "Window manager not running"
+        return 1
+    fi
+    
+    echo "TOGGLE_DESKTOP" > "$WM_FIFO"
+    log_wm "Toggled desktop visibility"
+}
+
+# Apply window effects
+apply_window_effects() {
+    local window_id="$1"
+    local effect="$2"
+    
+    if [ -z "$window_id" ] || [ -z "$effect" ]; then
+        log_error "Window ID and effect type required"
+        return 1
+    fi
+    
+    if [ ! -p "$WM_FIFO" ]; then
+        log_error "Window manager not running"
+        return 1
+    fi
+    
+    case "$effect" in
+        fade_in|fade_out|minimize|maximize|shadow|blur)
+            echo "WINDOW_EFFECT:$window_id:$effect" > "$WM_FIFO"
+            log_wm "Applied effect '$effect' to window $window_id"
+            ;;
+        *)
+            log_error "Unknown effect: $effect"
+            return 1
+            ;;
+    esac
+}
+
 # Main command handler
 main() {
     local command="${1:-help}"
@@ -901,6 +1045,15 @@ main() {
         close-window)
             close_window_by_id "$2"
             ;;
+        switch-workspace)
+            switch_workspace "$2"
+            ;;
+        toggle-desktop)
+            toggle_desktop
+            ;;
+        window-effect)
+            apply_window_effects "$2" "$3"
+            ;;
         help|*)
             echo "BluejayLinux Window Manager"
             echo "Usage: $0 <command> [options]"
@@ -913,6 +1066,9 @@ main() {
             echo "  status                         Show window manager status"
             echo "  new-window [title] [x] [y] [w] [h]  Create new window"
             echo "  close-window <id>              Close window by ID"
+            echo "  switch-workspace <num>         Switch to workspace (1-4)"
+            echo "  toggle-desktop                 Show/hide desktop"
+            echo "  window-effect <id> <effect>    Apply effect to window"
             echo "  help                           Show this help"
             ;;
     esac

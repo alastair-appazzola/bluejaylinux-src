@@ -36,8 +36,8 @@ build_complete_os() {
     print_banner "Step 3/8: Building Kernel"
     build_kernel
     
-    # Step 4: Build rootfs
-    print_banner "Step 4/8: Building Root Filesystem"
+    # Step 4: Build rootfs with Chrome
+    print_banner "Step 4/8: Building Root Filesystem (with Chrome)"
     if [ -x scripts/build-rootfs.sh ]; then
         scripts/build-rootfs.sh
     else
@@ -85,10 +85,19 @@ build_complete_os() {
     echo "  ISO: ${ISO_DIR}/bluejay-linux-${VERSION}.iso"
     echo "  Root filesystem: ${ROOTFS}/"
     echo
+    echo "Included applications:"
+    echo "  ✓ File Manager (bluejay-files)"
+    echo "  ✓ Terminal (bluejay-terminal)"
+    echo "  ✓ Text Editor (bluejay-editor)" 
+    echo "  ✓ Google Chrome Browser (chrome-wrapper)"
+    echo "  ✓ System Settings (bluejay-settings)"
+    echo "  ✓ Medium-level managers (10 components)"
+    echo
     echo "You can now:"
-    echo "  1. Boot the ISO in a virtual machine"
+    echo "  1. Boot the ISO in a virtual machine with internet access"
     echo "  2. Write the ISO to a USB drive"
     echo "  3. Install BluejayLinux on physical hardware"
+    echo "  4. Use Chrome browser: Run 'bluejay-browser-chrome' or click desktop icon"
     echo
     echo "For more information, see the documentation in BLUE_JAY_DESIGN.md"
 }
